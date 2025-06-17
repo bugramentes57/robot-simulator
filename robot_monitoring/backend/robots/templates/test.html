@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Robot WebSocket Test</title>
+    <style>
+      .robot-data {
+        border: 1px solid #ddd;
+        margin: 10px 0;
+        padding: 10px;
+        border-radius: 5px;
+      }
+      .status-online {
+        color: green;
+      }
+      .status-offline {
+        color: red;
+      }
+      .robot-data {
+        border-left: 5px solid #ddd;
+      }
+      .robot-status-running {
+        border-left-color: #4caf50;
+      }
+      .robot-status-idle {
+        border-left-color: #ffc107;
+      }
+      .robot-status-error {
+        border-left-color: #f44336;
+      }
+      .alarm-container {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        width: 300px;
+        z-index: 1000;
+      }
+      .alarm-message {
+        background-color: #f44336;
+        color: white;
+        padding: 15px;
+        margin-bottom: 10px;
+        border-radius: 4px;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+        animation: slideIn 0.5s ease-out;
+      }
+      @keyframes slideIn {
+        from {
+          transform: translateX(100%);
+          opacity: 0;
+        }
+        to {
+          transform: translateX(0);
+          opacity: 1;
+        }
+      }
+      .alarm-message.critical {
+        background-color: #f44336;
+      }
+      .alarm-message.warning {
+        background-color: #ff9800;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Robot Verileri</h1>
+    <div id="connection-status">
+      Bağlantı durumu:
+      <span class="status-offline">Bağlantı bekleniyor...</span>
+    </div>
+    <div id="messages"></div>
+    <div id="alarm-container" class="alarm-container"></div>
+
+    <script>
+      const ws = new WebSocket(
+        window.location.protocol === "https:"
+          ? "wss://"
+          : "ws://" + window.location.host + "/ws/robots/"
+      );
+      const statusElement = document.querySelector("#connection-status span");
+      const messagesDiv = document.getElementById("messages");
+
+      ws.onopen = function () {
+        console.log("WebSocket bağlantısı açıldı");
+        statusElement.textContent = "Bağlı";
+        statusElement.className = "status-online";
+      };
+
+      ws.onmessage = function (e) {
+        const data = JSON.parse(e.data);
+
+        if (data.type === "alarm") {
+          const alarmDiv = document.createElement("div");
+          alarmDiv.className = `alarm-message ${data.message.type.toLowerCase()}`;
+          alarmDiv.innerHTML = `
+            <strong>${data.message.type}</strong><br>
+            ${data.message.message}<br>
+            Robot: ${data.message.robot_id}
+          `;
+
+          document.getElementById("alarm-container").appendChild(alarmDiv);
+
+          // 5 saniye sonra alarmı kaldır
+          setTimeout(() => {
+            alarmDiv.style.opacity = "0";
+            setTimeout(() => alarmDiv.remove(), 500);
+          }, 5000);
+
+          // Ses çal
+          new Audio("/static/alarm.mp3")
+            .play()
+            .catch((e) => console.log("Ses çalınamadı:", e));
+        } else {
+          const robotData = data.message; // MQTT'den gelen veri
+
+          const dataDiv = document.createElement("div");
+          dataDiv.className = `robot-data robot-status-${robotData.motor_status}`;
+          dataDiv.innerHTML = `
+            <h3>Robot ID: ${robotData.robot_id}</h3>
+            <p>Konum: X=${robotData.position.x}, Y=${robotData.position.y}, Z=${
+            robotData.position.z
+          }</p>
+            <p>Hız: ${robotData.speed} m/s</p>
+            <p>Sıcaklık: ${robotData.temperature}°C</p>
+            <p>Batarya: ${robotData.battery_level}%</p>
+            <p>Motor Durumu: ${robotData.motor_status}</p>
+            <p>Hata Kodu: ${robotData.error_code || "Yok"}</p>
+            <p>Zaman: ${new Date(robotData.timestamp).toLocaleString()}</p>
+          `;
+
+          messagesDiv.insertBefore(dataDiv, messagesDiv.firstChild);
+        }
+      };
+
+      ws.onerror = function (e) {
+        console.error("WebSocket hatası:", e);
+        statusElement.textContent = "Hata oluştu";
+        statusElement.className = "status-offline";
+      };
+
+      ws.onclose = function () {
+        console.log("WebSocket bağlantısı kapandı");
+        statusElement.textContent = "Bağlantı kesildi";
+        statusElement.className = "status-offline";
+      };
+    </script>
+  </body>
+</html>
